@@ -3,37 +3,28 @@ class TOperation:
 
 class TProcessor:
     def __init__(self, number_factory):
-        """number_factory - функция, создающая экземпляр TANumber по умолчанию (0)."""
         self._factory = number_factory
-        self._lop_res = None   # левый операнд / результат
-        self._rop = None       # правый операнд
+        self._lop_res = None
+        self._rop = None
         self._op = TOperation.NONE
         self._error = ""
-    
     def reset(self):
         self._lop_res = self._factory()
         self._rop = self._factory()
         self._op = TOperation.NONE
         self._error = ""
-    
     def set_operation(self, op: int):
         self._op = op
-    
     def clear_operation(self):
         self._op = TOperation.NONE
-    
     def set_left(self, num):
         self._lop_res = num.copy()
-    
     def set_right(self, num):
         self._rop = num.copy()
-    
     def get_left(self):
         return self._lop_res.copy() if self._lop_res else None
-    
     def get_right(self):
         return self._rop.copy() if self._rop else None
-    
     def run_operation(self):
         if self._op == TOperation.NONE:
             return
@@ -55,7 +46,6 @@ class TProcessor:
             self._error = ""
         except Exception as e:
             self._error = str(e)
-    
     def run_function(self, func: str):
         if self._rop is None:
             self._error = "Нет правого операнда"
@@ -73,6 +63,5 @@ class TProcessor:
             self._error = ""
         except Exception as e:
             self._error = str(e)
-    
     def get_error(self) -> str:
         return self._error

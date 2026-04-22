@@ -1,9 +1,9 @@
-# controller.py (улучшенная версия для комплексных чисел)
 import tkinter as tk
 from tkinter import messagebox
 from .number import TPNumber, TFrac, TComplex, TANumber
 from .memory import TMemory
 from .processor import TProcessor, TOperation
+import math
 
 class CalculatorController:
     def __init__(self, mode="PNumber", base=10, precision=6, real_mode=True):
@@ -18,7 +18,7 @@ class CalculatorController:
         self._edit_buffer = "0"
         self.waiting_operand = True
         self.last_op = TOperation.NONE
-        self._last_rop = None   # правый операнд для повтора
+        self._last_rop = None
         self._last_expression = ""
         self.history = []
 
@@ -81,23 +81,16 @@ class CalculatorController:
         return self._edit_buffer if self._edit_buffer else self.current.to_string()
 
     def get_expression(self) -> str:
-        """Возвращает выражение в формате (левый) оператор (правый) для отображения."""
         left = None
         right = None
         op = self.processor._op
         if op != TOperation.NONE:
             if self.processor._lop_res is not None:
                 left = self.processor._lop_res.to_string()
-            # правый операнд может быть либо уже введён (self._last_rop?) или в буфере
-            if self._last_rop is not None and not self.waiting_operand:
-                # если уже был правый операнд (после выполнения операции), то не показываем
-                pass
             if self.waiting_operand:
-                # ожидаем ввод правого операнда, показываем то, что в буфере
                 if self._edit_buffer not in ("", "0"):
                     right = self._edit_buffer
             else:
-                # правый операнд уже введён (в current)
                 right = self.current.to_string()
             if left and op != TOperation.NONE:
                 op_str = self._op_to_str(op)
@@ -108,10 +101,20 @@ class CalculatorController:
         return ""
 
     def add_digit(self, digit: str):
+        if digit == '-':
+            s = self._edit_buffer
+            if s.endswith('i'):
+                return
+            if s == "" or s == "0":
+                s = "-"
+            else:
+                s += "-"
+            self._edit_buffer = s
+            self._sync_from_buffer()
+            return
         if self.waiting_operand:
             self._edit_buffer = ""
             self.waiting_operand = False
-
         s = self._edit_buffer
         if digit == '.':
             if self.mode != "PNumber" or not self.real_mode:
@@ -149,6 +152,13 @@ class CalculatorController:
         s += digit
         self._edit_buffer = s
         self._sync_from_buffer()
+        # Добавить в метод add_digit после проверок, если цифра недопустима:
+        if self.mode in ("PNumber", "TComplex"):
+            try:
+                int(digit, self.base)
+            except ValueError:
+                messagebox.showerror("Ошибка ввода", f"Цифра '{digit}' недопустима для системы с основанием {self.base}")
+                return
 
     def add_sign(self):
         s = self._edit_buffer
@@ -206,11 +216,8 @@ class CalculatorController:
 
     def set_operation(self, op: int):
         self._sync_from_buffer()
-        # Если есть левый операнд и мы не ждём ввод (т.е. правый операнд уже введён),
-        # то сначала выполняем текущую операцию, чтобы получить результат.
         if not self.waiting_operand and self.processor._op != TOperation.NONE:
             self._execute_current_operation()
-        # Теперь устанавливаем новую операцию
         self.processor.set_left(self.current)
         self.processor.set_operation(op)
         self.last_op = op
@@ -218,11 +225,10 @@ class CalculatorController:
         self._last_expression = self.current.to_string() + self._op_to_str(op)
 
     def _execute_current_operation(self):
-        """Выполняет текущую операцию (используется перед установкой новой операции или при =)."""
         if self.processor._op == TOperation.NONE:
             return
         self.processor.set_right(self.current)
-        self._last_rop = self.current.copy()   # сохраняем правый операнд для повтора
+        self._last_rop = self.current.copy()
         expr = self._last_expression + self.current.to_string()
         try:
             self.processor.run_operation()
@@ -239,12 +245,10 @@ class CalculatorController:
             self.clear_all()
 
     def calculate(self):
-        """Обработка нажатия '='. Выполняет текущую операцию или повторяет последнюю."""
         self._sync_from_buffer()
         if self.processor._op != TOperation.NONE:
             self._execute_current_operation()
         else:
-            # Повтор последней операции
             if self.last_op != TOperation.NONE and self._last_rop is not None:
                 self.processor.set_left(self.current)
                 self.processor.set_right(self._last_rop)
@@ -297,3 +301,35 @@ class CalculatorController:
             self._sync_to_buffer()
         except Exception as e:
             messagebox.showerror("Ошибка вставки", str(e))
+
+    def evaluate_expression(self, expr: str):
+        """Вычисляет строку выражения с поддержкой +, -, *, /, скобок, sqr, rev, sqrt, i."""
+        # Заменяем 'i' на 'j' (Python использует j для мнимой единицы)
+        expr = expr.replace('i', 'j')
+        expr = expr.replace('sqr', '**2')
+        expr = expr.replace('rev', '1/')
+        expr = expr.replace('sqrt', 'math.sqrt')
+        try:
+            # Вычисляем
+            result = eval(expr, {"math": math, "j": 1j})
+            # Преобразуем результат в TPNumber, TFrac или TComplex в зависимости от режима
+            if self.mode == "PNumber":
+                if isinstance(result, complex):
+                    raise ValueError("Результат комплексный, а режим p-ичных чисел")
+                return TPNumber(float(result), self.base, self.precision)
+            elif self.mode == "TFrac":
+                if isinstance(result, complex):
+                    raise ValueError("Результат комплексный, а режим дробей")
+                num = float(result)
+                if num.is_integer():
+                    return TFrac(int(num), 1)
+                else:
+                    # Приближённое преобразование в дробь (для демонстрации)
+                    return TFrac(int(num*1000), 1000)
+            else:  # TComplex
+                if isinstance(result, complex):
+                    return TComplex(result.real, result.imag, self.base, self.precision)
+                else:
+                    return TComplex(float(result), 0.0, self.base, self.precision)
+        except Exception as e:
+            raise ValueError(f"Ошибка в выражении: {str(e)}")

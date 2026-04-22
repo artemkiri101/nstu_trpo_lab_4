@@ -217,10 +217,13 @@ class TComplex(TANumber):
             return f"{re_str}{im_str}i" if re_str != "0" else f"{im_str}i"
     def from_string(self, s: str):
         s = s.strip().replace(' ', '')
+        if not s:
+            raise ValueError("Пустая строка")
         if 'i' not in s:
             self._re.from_string(s)
             self._im = TPNumber(0.0, self._re.get_base(), self._re.precision)
             return
+        # Обработка простых случаев
         if s == 'i':
             self._re = TPNumber(0.0, self._re.get_base(), self._re.precision)
             self._im = TPNumber(1.0, self._re.get_base(), self._re.precision)
@@ -229,18 +232,27 @@ class TComplex(TANumber):
             self._re = TPNumber(0.0, self._re.get_base(), self._re.precision)
             self._im = TPNumber(-1.0, self._re.get_base(), self._re.precision)
             return
-        match = re.match(r'^([+-]?[\dA-F.]+)([+-][\dA-F.]+)i$', s, re.IGNORECASE)
-        if match:
-            re_part, im_part = match.groups()
+        if s == '+i':
+            self._re = TPNumber(0.0, self._re.get_base(), self._re.precision)
+            self._im = TPNumber(1.0, self._re.get_base(), self._re.precision)
+            return
+        # Разделяем на действительную и мнимую части
+        # Убираем последнюю 'i'
+        s_without_i = s[:-1]
+        # Ищем последний '+' или '-' перед i (не в начале)
+        sign_pos = -1
+        for idx, ch in enumerate(s_without_i):
+            if (ch == '+' or ch == '-') and idx > 0:
+                sign_pos = idx
+        if sign_pos == -1:
+            # только мнимая часть (например "5i")
+            self._re = TPNumber(0.0, self._re.get_base(), self._re.precision)
+            self._im.from_string(s_without_i)
+        else:
+            re_part = s_without_i[:sign_pos]
+            im_part = s_without_i[sign_pos:]
             self._re.from_string(re_part)
             self._im.from_string(im_part)
-        else:
-            if s.endswith('i'):
-                im_part = s[:-1]
-                self._re = TPNumber(0.0, self._re.get_base(), self._re.precision)
-                self._im.from_string(im_part)
-            else:
-                raise ValueError("Неверный формат комплексного числа")
     def copy(self): return TComplex(self._re.value, self._im.value, self._re.get_base(), self._re.precision)
     def add(self, other):
         if not isinstance(other, TComplex):

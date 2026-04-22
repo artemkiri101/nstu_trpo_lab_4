@@ -3,6 +3,10 @@ from tkinter import ttk, messagebox, scrolledtext, Menu
 from .controller import CalculatorController
 from .processor import TOperation
 
+class InputMode:
+    SIMPLE = 0
+    EXPRESSION = 1
+
 class CalculatorGUI:
     def __init__(self, root):
         self.root = root
@@ -10,6 +14,7 @@ class CalculatorGUI:
         self.root.resizable(False, False)
 
         self.controller = CalculatorController(mode="PNumber", base=10, precision=6, real_mode=True)
+        self.input_mode = InputMode.SIMPLE
 
         self.display_var = tk.StringVar()
         self.memory_var = tk.StringVar(value=" ")
@@ -36,6 +41,11 @@ class CalculatorGUI:
         self.root.bind_all("<Control-c>", lambda e: self.copy_to_clipboard())
         self.root.bind_all("<Control-v>", lambda e: self.paste_from_clipboard())
 
+        input_mode_menu = Menu(menubar, tearoff=0)
+        input_mode_menu.add_command(label="Простой (последовательный)", command=self.set_simple_mode)
+        input_mode_menu.add_command(label="Выражение (со скобками)", command=self.set_expression_mode)
+        menubar.add_cascade(label="Режим ввода", menu=input_mode_menu)
+
         mode_menu = Menu(menubar, tearoff=0)
         mode_menu.add_command(label="p-ичные числа", command=lambda: self.switch_mode("PNumber"))
         mode_menu.add_command(label="Простые дроби", command=lambda: self.switch_mode("TFrac"))
@@ -61,8 +71,61 @@ class CalculatorGUI:
 
         self.root.config(menu=menubar)
 
+    def set_simple_mode(self):
+        self.input_mode = InputMode.SIMPLE
+        self.expr_frame.pack_forget()
+        self.display.pack(fill=tk.X, padx=5, pady=5)
+        # Показываем серую метку для выражения
+        self.expr_label.pack(fill=tk.X, padx=5)
+        self.expr_entry.unbind('<Key>')
+        self.root.bind('<Key>', self.on_keypress)
+        self.update_buttons_visibility()
+        self.update_ui_for_mode()
+
+    def set_expression_mode(self):
+        self.input_mode = InputMode.EXPRESSION
+        self.display.pack_forget()
+        self.expr_frame.pack(fill=tk.X, padx=5, pady=2)
+        self.display.pack(fill=tk.X, padx=5, pady=5)
+        # Скрываем серую метку (она не нужна, есть поле ввода)
+        self.expr_label.pack_forget()
+        self.root.unbind('<Key>')
+        self.expr_entry.bind('<Key>', self.on_expr_keypress)
+        self.update_buttons_visibility()
+        self.update_ui_for_mode()
+
+    def on_expr_keypress(self, event):
+        key = event.char.upper()
+        if key == '\b':
+            self.on_button('⌫')
+        elif key == '\r':
+            self.evaluate_expression()
+        elif key in ('+', '-', '*', '/', '.', '(', ')', 'I'):
+            self.on_button(key.lower() if key == 'I' else key)
+        elif key == 'C':
+            self.on_button('C')
+        elif key == 'R':
+            self.on_button('Rev')
+        elif key == 'Q':
+            self.on_button('Sqr')
+        elif key == 'S':
+            self.on_button('√')
+        elif key in '0123456789ABCDEF':
+            self.on_button(key)
+        return "break"
+
+    def update_buttons_visibility(self):
+        for child in self.buttons_frame.winfo_children():
+            text = child['text']
+            if text in ('(', ')'):
+                if self.input_mode == InputMode.EXPRESSION:
+                    child.grid()
+                else:
+                    child.grid_remove()
+            else:
+                child.grid()
+
     def create_widgets(self):
-        # Верхняя панель: метка режима, память, дисплей
         top_frame = tk.Frame(self.root)
         top_frame.pack(pady=5, fill=tk.X)
 
@@ -72,14 +135,23 @@ class CalculatorGUI:
         self.mem_label = tk.Label(top_frame, textvariable=self.memory_var, font=("Arial", 12), width=3)
         self.mem_label.pack(side=tk.LEFT)
 
-        self.display = tk.Entry(top_frame, textvariable=self.display_var, font=("Arial", 18), justify="right", state='readonly')
-        self.display.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        # Метка для отображения текущего выражения
+        # Серая метка для отображения выражения в простом режиме
         self.expr_label = tk.Label(self.root, text="", font=("Arial", 10), anchor="e", fg="gray")
         self.expr_label.pack(fill=tk.X, padx=5)
 
-        # Панель основания (только для p-ичных и комплексных)
+        self.display = tk.Entry(self.root, textvariable=self.display_var, font=("Arial", 18), justify="right", state='readonly')
+        self.display.pack(fill=tk.X, padx=5, pady=5)
+
+        self.expr_frame = tk.Frame(self.root)
+        self.expr_label2 = tk.Label(self.expr_frame, text="Выражение:", font=("Arial", 10))
+        self.expr_label2.pack(side=tk.LEFT)
+        self.expr_entry = tk.Entry(self.expr_frame, font=("Arial", 12), justify="left")
+        self.expr_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.eval_button = tk.Button(self.expr_frame, text="=", font=("Arial", 10), width=3,
+                                     command=self.evaluate_expression)
+        self.eval_button.pack(side=tk.LEFT)
+        self.expr_entry.bind('<Return>', lambda e: self.evaluate_expression())
+
         control_frame = tk.Frame(self.root)
         control_frame.pack(pady=5, fill=tk.X)
         self.base_label = tk.Label(control_frame, text="Основание:")
@@ -89,7 +161,6 @@ class CalculatorGUI:
         self.base_spin.pack(side=tk.LEFT, padx=5)
         self.update_base_visibility()
 
-        # Кнопки
         self.buttons_frame = tk.Frame(self.root)
         self.buttons_frame.pack(pady=5)
 
@@ -98,7 +169,7 @@ class CalculatorGUI:
             ('7', 1, 0), ('8', 1, 1), ('9', 1, 2), ('/', 1, 3), ('*', 1, 4), ('⌫', 1, 5),
             ('4', 2, 0), ('5', 2, 1), ('6', 2, 2), ('-', 2, 3), ('+', 2, 4), ('=', 2, 5),
             ('1', 3, 0), ('2', 3, 1), ('3', 3, 2), ('Sqr', 3, 3), ('Rev', 3, 4), ('√', 3, 5),
-            ('0', 4, 0), ('.', 4, 1), ('±', 4, 2), ('i', 4, 3)
+            ('0', 4, 0), ('.', 4, 1), ('±', 4, 2), ('i', 4, 3), ('(', 4, 4), (')', 4, 5)
         ]
 
         for text, row, col in static_buttons:
@@ -110,17 +181,38 @@ class CalculatorGUI:
             if text == 'i':
                 self.i_button = btn
 
-        # Кнопки A-F
+        self.hex_frame = tk.Frame(self.root)
+        self.hex_frame.pack(pady=2)
         self.hex_buttons = []
-        for i, ch in enumerate('ABCDEF'):
-            row = 5 + i // 3
-            col = i % 3
-            btn = tk.Button(self.buttons_frame, text=ch, width=5,
-                            command=lambda d=ch: self.on_button(d))
-            btn.grid(row=row, column=col, padx=2, pady=2)
-            self.hex_buttons.append(btn)
 
         self.update_ui_for_mode()
+        self.set_simple_mode()
+
+    def evaluate_expression(self):
+        expr = self.expr_entry.get().strip()
+        if not expr:
+            return
+        try:
+            result = self.controller.evaluate_expression(expr)
+            self.display_var.set(result.to_string())
+            self.expr_entry.delete(0, tk.END)
+            self.controller._add_history(f"{expr} = {result.to_string()}")
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+
+    def update_hex_buttons(self):
+        for btn in self.hex_buttons:
+            btn.destroy()
+        self.hex_buttons.clear()
+        if self.controller.mode not in ("PNumber", "TComplex"):
+            return
+        base = self.controller.base
+        needed = [chr(ord('A')+i) for i in range(max(0, base-10))]
+        for ch in needed:
+            btn = tk.Button(self.hex_frame, text=ch, width=5,
+                            command=lambda d=ch: self.on_button(d))
+            btn.pack(side=tk.LEFT, padx=2, pady=2)
+            self.hex_buttons.append(btn)
 
     def update_base_visibility(self):
         if self.controller.mode in ("PNumber", "TComplex"):
@@ -138,36 +230,17 @@ class CalculatorGUI:
             self.mode_var.set("простые дроби")
         else:
             self.mode_var.set("комплексные числа")
-
         self.update_base_visibility()
-
-        # Кнопка i
-        if mode == "TComplex":
-            self.i_button.config(state=tk.NORMAL)
-        else:
-            self.i_button.config(state=tk.DISABLED)
-
-        # Кнопки A-F
-        base = self.controller.base
-        needed = [chr(ord('A')+i) for i in range(max(0, base-10))] if mode in ("PNumber", "TComplex") else []
-        for i, btn in enumerate(self.hex_buttons):
-            if i < len(needed):
-                btn.config(state=tk.NORMAL)
-                btn.grid()
-            else:
-                btn.config(state=tk.DISABLED)
-                btn.grid_remove()
-
-        # Точка
-        if mode == "PNumber" and self.controller.real_mode:
-            self.dot_button.config(state=tk.NORMAL)
-        else:
-            self.dot_button.config(state=tk.DISABLED)
+        self.update_hex_buttons()
+        self.i_button.config(state=tk.NORMAL if mode == "TComplex" else tk.DISABLED)
+        self.dot_button.config(state=tk.NORMAL if (mode == "PNumber" and self.controller.real_mode) else tk.DISABLED)
+        self.update_buttons_visibility()
 
     def update_display(self):
         self.display_var.set(self.controller.get_display_string())
         self.memory_var.set(self.controller.memory.state_string())
         self.base_var.set(str(self.controller.base))
+        # Обновляем серую метку (выражение) для простого режима
         self.expr_label.config(text=self.controller.get_expression())
         self.update_ui_for_mode()
 
@@ -228,63 +301,79 @@ class CalculatorGUI:
 
     def on_button(self, cmd):
         try:
-            if cmd == 'C':
-                self.controller.clear_all()
+            if self.input_mode == InputMode.SIMPLE:
+                if cmd == 'C':
+                    self.controller.clear_all()
+                elif cmd == 'CE':
+                    self.controller.clear_entry()
+                elif cmd == 'MC':
+                    self.controller.mem_clear()
+                elif cmd == 'MR':
+                    self.controller.mem_recall()
+                elif cmd == 'MS':
+                    self.controller.mem_store()
+                elif cmd == 'M+':
+                    self.controller.mem_add()
+                elif cmd == '=':
+                    self.controller.calculate()
+                elif cmd == 'Sqr':
+                    self.controller.apply_function("Sqr")
+                elif cmd == 'Rev':
+                    self.controller.apply_function("Rev")
+                elif cmd == '√':
+                    self.controller.apply_function("Sqrt")
+                elif cmd == '⌫':
+                    self.controller.backspace()
+                elif cmd == '±':
+                    self.controller.add_sign()
+                elif cmd == '.':
+                    self.controller.add_digit('.')
+                elif cmd in '0123456789ABCDEF':
+                    try:
+                        int(cmd, self.controller.base)
+                    except ValueError:
+                        messagebox.showerror("Ошибка", f"Цифра '{cmd}' недопустима для основания {self.controller.base}")
+                        return
+                    self.controller.add_digit(cmd)
+                elif cmd in ('+', '-', '*', '/'):
+                    op_map = {'+': TOperation.ADD, '-': TOperation.SUB, '*': TOperation.MUL, '/': TOperation.DIV}
+                    self.controller.set_operation(op_map[cmd])
+                elif cmd == 'i':
+                    self.controller.add_digit('i')
                 self.update_display()
-            elif cmd == 'CE':
-                self.controller.clear_entry()
-                self.update_display()
-            elif cmd == 'MC':
-                self.controller.mem_clear()
-                self.update_display()
-            elif cmd == 'MR':
-                self.controller.mem_recall()
-                self.update_display()
-            elif cmd == 'MS':
-                self.controller.mem_store()
-                self.update_display()
-            elif cmd == 'M+':
-                self.controller.mem_add()
-                self.update_display()
-            elif cmd == '=':
-                self.controller.calculate()
-                self.update_display()
-            elif cmd == '+':
-                self.controller.set_operation(TOperation.ADD)
-                self.update_display()
-            elif cmd == '-':
-                self.controller.set_operation(TOperation.SUB)
-                self.update_display()
-            elif cmd == '*':
-                self.controller.set_operation(TOperation.MUL)
-                self.update_display()
-            elif cmd == '/':
-                self.controller.set_operation(TOperation.DIV)
-                self.update_display()
-            elif cmd == 'Sqr':
-                self.controller.apply_function("Sqr")
-                self.update_display()
-            elif cmd == 'Rev':
-                self.controller.apply_function("Rev")
-                self.update_display()
-            elif cmd == '√':
-                self.controller.apply_function("Sqrt")
-                self.update_display()
-            elif cmd == '⌫':
-                self.controller.backspace()
-                self.update_display()
-            elif cmd == '±':
-                self.controller.add_sign()
-                self.update_display()
-            elif cmd == '.':
-                self.controller.add_digit('.')
-                self.update_display()
-            elif cmd == 'i':
-                self.controller.add_digit('i')
-                self.update_display()
-            elif cmd in '0123456789ABCDEF':
-                self.controller.add_digit(cmd)
-                self.update_display()
+            else:
+                if cmd == 'C':
+                    self.expr_entry.delete(0, tk.END)
+                    self.display_var.set("0")
+                elif cmd == 'CE':
+                    self.expr_entry.delete(0, tk.END)
+                elif cmd == 'MC':
+                    self.controller.mem_clear()
+                    self.update_display()
+                elif cmd == 'MR':
+                    self.controller.mem_recall()
+                    self.update_display()
+                elif cmd == 'MS':
+                    self.controller.mem_store()
+                    self.update_display()
+                elif cmd == 'M+':
+                    self.controller.mem_add()
+                    self.update_display()
+                elif cmd == '=':
+                    self.evaluate_expression()
+                elif cmd == '⌫':
+                    self.expr_entry.delete(len(self.expr_entry.get())-1, tk.END)
+                elif cmd == 'Sqr':
+                    self.expr_entry.insert(tk.END, "sqr()")
+                    self.expr_entry.icursor(self.expr_entry.index(tk.END)-1)
+                elif cmd == 'Rev':
+                    self.expr_entry.insert(tk.END, "rev()")
+                    self.expr_entry.icursor(self.expr_entry.index(tk.END)-1)
+                elif cmd == '√':
+                    self.expr_entry.insert(tk.END, "sqrt()")
+                    self.expr_entry.icursor(self.expr_entry.index(tk.END)-1)
+                else:
+                    self.expr_entry.insert(tk.END, cmd)
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
             self.controller.clear_all()
@@ -296,36 +385,41 @@ class CalculatorGUI:
             self.on_button('⌫')
         elif key == '\r':
             self.on_button('=')
-        elif key == '-':
-            self.on_button('-')
-        elif key == '+':
-            self.on_button('+')
-        elif key == '*':
-            self.on_button('*')
-        elif key == '/':
-            self.on_button('/')
-        elif key == '.':
-            self.on_button('.')
+        elif key in ('+', '-', '*', '/', '.', 'I'):
+            self.on_button(key.lower() if key == 'I' else key)
         elif key == 'C':
-            self.on_button('C')
+            try:
+                int('C', self.controller.base)
+                self.on_button('C')
+            except ValueError:
+                pass
         elif key == 'R':
             self.on_button('Rev')
         elif key == 'Q':
             self.on_button('Sqr')
         elif key == 'S':
             self.on_button('√')
-        elif key == 'I':
-            self.on_button('i')
         elif key in '0123456789ABCDEF':
             self.on_button(key)
+        return "break"
 
     def copy_to_clipboard(self):
-        self.controller.copy_to_clipboard(self.root)
+        if self.input_mode == InputMode.SIMPLE:
+            text = self.display_var.get()
+        else:
+            text = self.expr_entry.get()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
         messagebox.showinfo("Буфер обмена", "Значение скопировано")
 
     def paste_from_clipboard(self):
-        self.controller.paste_from_clipboard(self.root)
-        self.update_display()
+        text = self.root.clipboard_get()
+        if self.input_mode == InputMode.SIMPLE:
+            self.controller._edit_buffer = text
+            self.controller._sync_from_buffer()
+            self.update_display()
+        else:
+            self.expr_entry.insert(tk.END, text)
 
     def show_about(self):
         messagebox.showinfo("О программе",
@@ -337,10 +431,9 @@ class CalculatorGUI:
                             "Операции: +, -, *, /, Sqr, Rev, √\n"
                             "Память: MC, MR, MS, M+\n"
                             "Буфер обмена: Ctrl+C, Ctrl+V\n"
+                            "Два режима ввода: простой (последовательный) и выражение (со скобками).\n"
                             "© 2026.\n"
-                            "Работу выполнили:\n"
-                            "© Кириченко А. А.\n"
-                            "    Обидин Н. В. ")
+                            "Работу выполнили: Кириченко А. А., Обидин Н. В.")
 
     def show_history(self):
         win = tk.Toplevel(self.root)
