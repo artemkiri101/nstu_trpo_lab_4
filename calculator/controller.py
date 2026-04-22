@@ -1,4 +1,4 @@
-# controller.py (исправленный, полный)
+# controller.py (улучшенная версия для комплексных чисел)
 import tkinter as tk
 from tkinter import messagebox
 from .number import TPNumber, TFrac, TComplex, TANumber
@@ -18,7 +18,7 @@ class CalculatorController:
         self._edit_buffer = "0"
         self.waiting_operand = True
         self.last_op = TOperation.NONE
-        self._last_rop = None
+        self._last_rop = None   # правый операнд для повтора
         self._last_expression = ""
         self.history = []
 
@@ -81,12 +81,30 @@ class CalculatorController:
         return self._edit_buffer if self._edit_buffer else self.current.to_string()
 
     def get_expression(self) -> str:
-        if self.processor._op != TOperation.NONE:
-            left = self.processor._lop_res.to_string() if self.processor._lop_res else ""
-            op = self._op_to_str(self.processor._op)
-            right = self._edit_buffer if not self.waiting_operand else ""
-            if left and op:
-                return f"{left} {op} {right}".strip()
+        """Возвращает выражение в формате (левый) оператор (правый) для отображения."""
+        left = None
+        right = None
+        op = self.processor._op
+        if op != TOperation.NONE:
+            if self.processor._lop_res is not None:
+                left = self.processor._lop_res.to_string()
+            # правый операнд может быть либо уже введён (self._last_rop?) или в буфере
+            if self._last_rop is not None and not self.waiting_operand:
+                # если уже был правый операнд (после выполнения операции), то не показываем
+                pass
+            if self.waiting_operand:
+                # ожидаем ввод правого операнда, показываем то, что в буфере
+                if self._edit_buffer not in ("", "0"):
+                    right = self._edit_buffer
+            else:
+                # правый операнд уже введён (в current)
+                right = self.current.to_string()
+            if left and op != TOperation.NONE:
+                op_str = self._op_to_str(op)
+                if right:
+                    return f"({left}) {op_str} ({right})"
+                else:
+                    return f"({left}) {op_str}"
         return ""
 
     def add_digit(self, digit: str):
@@ -200,9 +218,11 @@ class CalculatorController:
         self._last_expression = self.current.to_string() + self._op_to_str(op)
 
     def _execute_current_operation(self):
-        """Выполняет текущую операцию без сброса (используется перед установкой новой операции)."""
+        """Выполняет текущую операцию (используется перед установкой новой операции или при =)."""
+        if self.processor._op == TOperation.NONE:
+            return
         self.processor.set_right(self.current)
-        self._last_rop = self.current.copy()
+        self._last_rop = self.current.copy()   # сохраняем правый операнд для повтора
         expr = self._last_expression + self.current.to_string()
         try:
             self.processor.run_operation()
