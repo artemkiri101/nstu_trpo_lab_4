@@ -11,7 +11,7 @@ class CalculatorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Универсальный калькулятор")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
 
         self.controller = CalculatorController(mode="PNumber", base=10, precision=6, real_mode=True)
         self.input_mode = InputMode.SIMPLE
